@@ -1,0 +1,23 @@
+# Render.com Build & Deploy Configuration
+
+# This file is optional but recommended for Render.com deployments
+
+services:
+  - type: web
+    name: kino-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_PATH
+        value: /webhook
+      - key: PORT
+        value: 8000
