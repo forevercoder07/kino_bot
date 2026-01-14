@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 import config
-from db import db
+from database.db import db
 from handlers import user, admin, admin_stats, admin_management
 
 # Logging sozlamalari
