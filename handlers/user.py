@@ -233,7 +233,7 @@ async def films_statistics(message: Message):
     for idx, film in enumerate(top_films, 1):
         medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
         text += f"{medal} <b>{film['name']}</b>\n"
-        text += f"   👁 Ko'rildi: {format_number(film['views_count'])} marta\n"
+        text += f"   👁 Ko'rildi: {format_number(film['views_count'])} marta\n\n"
     
     await message.answer(text, reply_markup=get_user_main_menu())
 
