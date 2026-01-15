@@ -110,19 +110,29 @@ def get_pagination_keyboard(current_page: int, total_pages: int, prefix: str = "
 
     if current_page > 0:
         buttons.append(
-            InlineKeyboardButton("◀️ Oldingi", callback_data=f"{prefix}_page_{current_page - 1}")
+            InlineKeyboardButton(
+                text="◀️ Oldingi",
+                callback_data=f"{prefix}_page_{current_page - 1}"
+            )
         )
 
     buttons.append(
-        InlineKeyboardButton(f"{current_page + 1}/{total_pages}", callback_data="current_page")
+        InlineKeyboardButton(
+            text=f"{current_page + 1}/{total_pages}",
+            callback_data="current_page"
+        )
     )
 
     if current_page < total_pages - 1:
         buttons.append(
-            InlineKeyboardButton("Keyingi ▶️", callback_data=f"{prefix}_page_{current_page + 1}")
+            InlineKeyboardButton(
+                text="Keyingi ▶️",
+                callback_data=f"{prefix}_page_{current_page + 1}"
+            )
         )
 
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
 def get_channel_management_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
