@@ -23,6 +23,7 @@ def get_back_to_menu():
         keyboard=[[KeyboardButton(text="🏠 Asosiy menyu")]],
         resize_keyboard=True
     )
+
 def get_admin_main_menu(permissions=None):
     keyboard = []
 
@@ -62,11 +63,13 @@ def get_admin_main_menu(permissions=None):
         keyboard = rows
 
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
 def get_cancel_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="❌ Bekor qilish")]],
         resize_keyboard=True
     )
+
 def get_film_parts_keyboard(parts_count: int, film_code: str):
     keyboard = []
 
@@ -86,18 +89,31 @@ def get_film_parts_keyboard(parts_count: int, film_code: str):
         keyboard.append(row)
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-def get_channels_keyboard(channels):
+
+
+def get_channels_keyboard(channels, invite_links: dict = None):
+    """
+    Kanallar keyboard.
+    invite_links = {channel_id: 'https://t.me/+xxxx'} — yopiq kanallar uchun
+    """
     keyboard = []
+    invite_links = invite_links or {}
 
     for idx, channel in enumerate(channels, 1):
         name = channel['channel_title'] or channel['channel_username'] or f"Kanal {idx}"
+
         if channel['channel_username']:
+            # Ochiq kanal — username orqali
             url = f"https://t.me/{channel['channel_username']}"
+        elif channel['channel_id'] in invite_links:
+            # Yopiq kanal — settings da saqlangan invite link
+            url = invite_links[channel['channel_id']]
         else:
+            # Yopiq kanal — standart format (ba'zida ishlamaydi)
             url = f"https://t.me/c/{str(channel['channel_id'])[4:]}/1"
 
         keyboard.append([
-            InlineKeyboardButton(text=f"{idx}. {name}", url=url)
+            InlineKeyboardButton(text=f"{'🔒' if not channel['channel_username'] else '📢'} {idx}. {name}", url=url)
         ])
 
     keyboard.append([
@@ -105,6 +121,8 @@ def get_channels_keyboard(channels):
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def get_pagination_keyboard(current_page: int, total_pages: int, prefix: str = "films"):
     buttons = []
 
