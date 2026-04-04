@@ -14,7 +14,7 @@ from handlers.admin import AdminStates, is_admin_check, has_permission_check
 router = Router()
 
 
-# ==================== USER STATISTICS ====================
+# ==================== USER STATISTICS ===================
 
 @router.message(F.text == "👥 User Statistic")
 async def user_statistics(message: Message):
