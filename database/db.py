@@ -97,6 +97,17 @@ class Database:
                 )
             ''')
             
+            # Join requests jadvali (yopiq kanallar uchun)
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS join_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    channel_id BIGINT NOT NULL,
+                    requested_date TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(user_id, channel_id)
+                )
+            ''')
+            
             # Admin contact link ni sozlamalarga qo'shish
             await conn.execute('''
                 INSERT INTO settings (key, value)
@@ -270,7 +281,27 @@ class Database:
         """Barcha kanallarni olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('SELECT * FROM channels ORDER BY added_date')
-    
+
+    # =============== JOIN REQUEST METHODS ===============
+
+    async def add_join_request(self, user_id: int, channel_id: int):
+        """Yopiq kanalga qo'shilish so'rovini saqlash"""
+        async with self.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO join_requests (user_id, channel_id)
+                VALUES ($1, $2)
+                ON CONFLICT (user_id, channel_id) DO NOTHING
+            ''', user_id, channel_id)
+
+    async def has_join_request(self, user_id: int, channel_id: int) -> bool:
+        """Foydalanuvchi yopiq kanalga so'rov yuborgan-yubormaganligini tekshirish"""
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval('''
+                SELECT COUNT(*) FROM join_requests
+                WHERE user_id = $1 AND channel_id = $2
+            ''', user_id, channel_id)
+            return result > 0
+
     # =============== ADMIN METHODS ===============
     
     async def add_admin(self, user_id: int, permissions: List[str], added_by: int):
