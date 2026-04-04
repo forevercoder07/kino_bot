@@ -5,26 +5,35 @@ from database.db import db
 
 async def check_user_subscription(bot: Bot, user_id: int) -> tuple[bool, list]:
     """
-    Foydalanuvchining barcha majburiy kanallarga obuna ekanligini tekshirish
+    Foydalanuvchining barcha majburiy kanallarga obuna ekanligini tekshirish.
+    Ochiq kanal: get_chat_member orqali tekshiriladi.
+    Yopiq kanal: join_requests jadvalidagi so'rov borligiga qarab tekshiriladi.
     Returns: (is_subscribed, not_subscribed_channels)
     """
     channels = await db.get_all_channels()
-    
+
     if not channels:
         return True, []
-    
+
     not_subscribed = []
-    
+
     for channel in channels:
         try:
             member = await bot.get_chat_member(channel['channel_id'], user_id)
             if member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.KICKED]:
-                not_subscribed.append(channel)
+                # Ochiq kanalda emas — yopiq kanal uchun join request borligini tekshir
+                has_request = await db.has_join_request(user_id, channel['channel_id'])
+                if not has_request:
+                    not_subscribed.append(channel)
         except Exception as e:
-            # Agar kanal yopiq bo'lsa yoki bot kanalda bo'lmasa, xatolikni e'tiborsiz qoldirish
+            # get_chat_member xato bersa — yopiq kanal bo'lishi mumkin
+            # join_request borligini tekshiramiz
+            has_request = await db.has_join_request(user_id, channel['channel_id'])
+            if not has_request:
+                not_subscribed.append(channel)
             print(f"Kanal tekshirishda xatolik: {channel['channel_id']} - {e}")
             continue
-    
+
     return len(not_subscribed) == 0, not_subscribed
 
 
@@ -51,7 +60,7 @@ async def broadcast_message(bot: Bot, message_to_send, from_chat_id=None):
     users = await db.get_all_users()
     success = 0
     failed = 0
-    
+
     for user in users:
         try:
             await message_to_send.copy_to(user['user_id'])
@@ -59,7 +68,7 @@ async def broadcast_message(bot: Bot, message_to_send, from_chat_id=None):
         except Exception as e:
             failed += 1
             print(f"Foydalanuvchiga yuborishda xatolik {user['user_id']}: {e}")
-    
+
     return success, failed
 
 
@@ -87,16 +96,16 @@ def parse_permissions(permissions_text):
     """
     if not permissions_text:
         return []
-    
+
     codes = [code.strip() for code in permissions_text.split(',')]
-    
+
     if '7' in codes:
         return ['all']
-    
+
     permissions = []
     for code in codes:
         perm_name = get_permission_name(code)
         if perm_name != code:  # Agar valid kod bo'lsa
             permissions.append(perm_name)
-    
+
     return permissions
