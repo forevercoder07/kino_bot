@@ -129,13 +129,16 @@ async def add_channel_start(message: Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_channel_add)
     await message.answer(
         "➕ <b>Yangi kanal qo'shish</b>\n\n"
-        "<b>Ochiq kanal uchun:</b>\n"
-        "• <code>@mychannel</code> (Username)\n"
-        "• <code>-1001234567890</code> (ID)\n\n"
-        "<b>Yopiq kanal uchun:</b>\n"
-        "• <code>-1001234567890</code> (ID)\n\n"
+        "<b>Ochiq kanal:</b>\n"
+        "• <code>@mychannel</code>\n"
+        "• <code>-1001234567890</code>\n\n"
+        "<b>Yopiq kanal (2 usul):</b>\n"
+        "1️⃣ Faqat ID (bot kanal admini bo'lsa):\n"
+        "   <code>-1001234567890</code>\n\n"
+        "2️⃣ ID + invite link (tavsiya etiladi):\n"
+        "   <code>-1001234567890 https://t.me/+xxxx</code>\n\n"
         "⚠️ Bot kanal adminlari orasida bo'lishi shart!\n"
-        "⚠️ Yopiq kanalda bot <b>Join Requests</b> ni ko'ra olishi kerak.",
+        "⚠️ Yopiq kanalda <b>Join Requests</b> sozlamasi yoqilgan bo'lsin.",
         reply_markup=get_cancel_keyboard()
     )
 
@@ -152,30 +155,71 @@ async def add_channel_process(message: Message, state: FSMContext):
 
     try:
         if channel_input.startswith('@'):
-            # Username orqali (faqat ochiq kanallar)
+            # @username orqali (ochiq kanallar)
             chat = await message.bot.get_chat(channel_input)
             channel_id = chat.id
             channel_username = chat.username
             channel_title = chat.title
+            invite_link = None
+
+        elif channel_input.startswith('https://t.me/+') or channel_input.startswith('https://t.me/joinchat/'):
+            # Invite link orqali (yopiq kanallar) — get_chat qilish mumkin emas
+            # Shuning uchun foydalanuvchidan ID ni ham so'raymiz
+            await message.answer(
+                "🔒 <b>Yopiq kanal invite linki aniqlandi!</b>\n\n"
+                "Invite link bilan birga kanal ID sini ham kiriting.\n\n"
+                "Kanal ID sini qanday topish:\n"
+                "1. Kanalga bot qo'shing (admin sifatida)\n"
+                "2. Botga kanaldan ixtiyoriy xabar forward qiling\n"
+                "3. Bot javobida kanal ID si ko'rinadi\n\n"
+                "Yoki @username_to_id_bot dan foydalaning.\n\n"
+                "Formatda yuboring:\n"
+                "<code>-1001234567890 https://t.me/+xxxx</code>\n\n"
+                "<i>ID va invite linkni bo'sh joy bilan ajrating</i>"
+            )
+            return
+
+        elif ' ' in channel_input:
+            # "ID invite_link" formatida (masalan: -1001234567890 https://t.me/+xxxx)
+            parts = channel_input.split(' ', 1)
+            channel_id = int(parts[0])
+            invite_link = parts[1].strip() if len(parts) > 1 else None
+
+            try:
+                chat = await message.bot.get_chat(channel_id)
+                channel_username = chat.username
+                channel_title = chat.title
+            except Exception:
+                # Bot kanalda admin bo'lmasa ham, ID va invite_link saqlanadi
+                channel_username = None
+                channel_title = f"Yopiq kanal ({channel_id})"
+
         else:
-            # ID orqali (ochiq yoki yopiq)
+            # Faqat ID (ochiq yoki yopiq)
             channel_id = int(channel_input)
             chat = await message.bot.get_chat(channel_id)
-            channel_username = chat.username  # Yopiq kanalda None bo'ladi
+            channel_username = chat.username
             channel_title = chat.title
+            invite_link = None
 
-        # Bazaga saqlash
+        # Bazaga saqlash — invite_link ustunini channels jadvaliga qo'shamiz
+        # (agar ustun yo'q bo'lsa, channel_username ga invite_link saqlanadi)
         await db.add_channel(channel_id, channel_username, channel_title)
+
+        # Agar invite_link berilgan bo'lsa, settings da saqlaymiz
+        if invite_link:
+            await db.set_setting(f"invite_link_{channel_id}", invite_link)
 
         await state.clear()
 
-        # Yopiq kanal uchun qo'shimcha eslatma
+        # Yopiq kanal
         if not channel_username:
-            # Invite link olishga urinish
-            try:
-                invite_link = await message.bot.export_chat_invite_link(channel_id)
-            except Exception:
-                invite_link = None
+            # Botdan avtomatik invite link olishga urinish
+            if not invite_link:
+                try:
+                    invite_link = await message.bot.export_chat_invite_link(channel_id)
+                except Exception:
+                    pass
 
             extra = (
                 "\n\n⚠️ <b>Bu yopiq kanal!</b>\n"
@@ -183,10 +227,7 @@ async def add_channel_process(message: Message, state: FSMContext):
                 "obuna bo'ldi deb hisoblanadi.\n\n"
                 "📌 Foydalanuvchilarga bu havolani bering:\n"
             )
-            if invite_link:
-                extra += f"<code>{invite_link}</code>"
-            else:
-                extra += "Kanal invite linkini qo'lda oling (kanal sozlamalaridan)."
+            extra += f"<code>{invite_link}</code>" if invite_link else "Kanal invite linkini qo'lda oling."
 
             await message.answer(
                 f"✅ <b>Yopiq kanal qo'shildi!</b>\n\n"
@@ -208,8 +249,10 @@ async def add_channel_process(message: Message, state: FSMContext):
     except ValueError:
         await message.answer(
             "❌ Noto'g'ri format!\n\n"
-            "Username: <code>@mychannel</code>\n"
-            "ID: <code>-1001234567890</code>"
+            "Quyidagilardan birini kiriting:\n"
+            "• <code>@mychannel</code> — ochiq kanal username\n"
+            "• <code>-1001234567890</code> — kanal ID\n"
+            "• <code>-1001234567890 https://t.me/+xxxx</code> — yopiq kanal ID + invite link"
         )
     except Exception as e:
         await message.answer(
