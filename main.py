@@ -38,15 +38,21 @@ async def on_startup():
     await db.create_tables()
     logger.info("Database jadvallari tekshirildi/yaratildi")
 
-    # Webhook o'rnatish
+    # Webhook o'rnatish — chat_join_request eventini qo'shish MUHIM!
     webhook_url = f"{config.WEBHOOK_URL}{config.WEBHOOK_PATH}"
     await bot.set_webhook(
         url=webhook_url,
-        drop_pending_updates=True
+        drop_pending_updates=True,
+        allowed_updates=[
+            "message",
+            "callback_query",
+            "chat_join_request",   # ← yopiq kanal so'rovlari uchun SHART
+            "my_chat_member",
+            "chat_member",
+        ]
     )
     logger.info(f"Webhook o'rnatildi: {webhook_url}")
 
-    # Bot ma'lumotlarini ko'rsatish
     bot_info = await bot.get_me()
     logger.info(f"Bot ishga tushdi: @{bot_info.username}")
 
@@ -55,13 +61,8 @@ async def on_shutdown():
     """Bot to'xtaganda"""
     logger.info("Bot to'xtatilmoqda...")
 
-    # Webhook o'chirish
     await bot.delete_webhook(drop_pending_updates=True)
-
-    # Database ulanishini yopish
     await db.disconnect()
-
-    # Session yopish
     await bot.session.close()
 
     logger.info("Bot to'xtatildi")
@@ -82,17 +83,14 @@ async def main():
     # Web application yaratish
     app = web.Application()
 
-    # Webhook handler
     webhook_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot
     )
     webhook_handler.register(app, path=config.WEBHOOK_PATH)
 
-    # Application sozlash
     setup_application(app, dp, bot=bot)
 
-    # Health check endpointlar
     async def root(request):
         return web.Response(text="Bot is running ✅")
 
