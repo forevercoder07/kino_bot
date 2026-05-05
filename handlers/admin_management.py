@@ -1,5 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 import config
@@ -170,7 +171,7 @@ async def admin_statistics(message: Message):
 
 # ==================== ANNOUNCEMENT CHANNEL SETTINGS ====================
 
-@router.message(F.text.startswith("/set_announcement_channel"))
+@router.message(Command("set_announcement_channel"))
 async def set_announcement_channel(message: Message):
     """
     E'lon kanalini sozlash.
@@ -184,16 +185,17 @@ async def set_announcement_channel(message: Message):
     if message.from_user.id != config.OWNER_ID:
         return
     
-    parts = message.text.split()
-    
-    if len(parts) < 4:
+    # Command argumentlarini olish: /set_announcement_channel ID USERNAME BOT
+    args = message.text.split()[1:]  # komandadan keyingi qismlar
+
+    if len(args) < 3:
         current_channel = await db.get_setting('announcement_channel') or "—"
         current_ch_username = await db.get_setting('announcement_channel_username') or "—"
         current_bot = await db.get_setting('bot_username') or "—"
 
         await message.answer(
             "📢 <b>E'lon kanali sozlamalari</b>\n\n"
-            f"Hozirgi kanal: <code>{current_channel}</code>\n"
+            f"Hozirgi kanal ID: <code>{current_channel}</code>\n"
             f"Hozirgi kanal username: @{current_ch_username}\n"
             f"Hozirgi bot username: @{current_bot}\n\n"
             "<b>O'zgartirish uchun:</b>\n"
@@ -203,10 +205,10 @@ async def set_announcement_channel(message: Message):
             "⚠️ Bot kanalga admin qilingan bo'lishi kerak!"
         )
         return
-    
-    channel_id = parts[1].strip()
-    channel_username = parts[2].strip().lstrip('@')
-    bot_username = parts[3].strip().lstrip('@')
+
+    channel_id = args[0].strip()
+    channel_username = args[1].strip().lstrip('@')
+    bot_username = args[2].strip().lstrip('@')
 
     # Kanalga ulanishni tekshirish
     try:
@@ -236,14 +238,14 @@ async def set_announcement_channel(message: Message):
 
 # ==================== CHANGE ADMIN CONTACT LINK ====================
 
-@router.message(F.text.startswith("/set_admin_contact"))
+@router.message(Command("set_admin_contact"))
 async def set_admin_contact(message: Message):
     if message.from_user.id != config.OWNER_ID:
         return
     
-    parts = message.text.split(maxsplit=1)
+    args = message.text.split(maxsplit=1)
     
-    if len(parts) < 2:
+    if len(args) < 2:
         await message.answer(
             "📝 <b>Admin contact link ni o'zgartirish</b>\n\n"
             "Format: <code>/set_admin_contact https://t.me/username</code>\n\n"
@@ -252,7 +254,7 @@ async def set_admin_contact(message: Message):
         )
         return
     
-    new_link = parts[1].strip()
+    new_link = args[1].strip()
     
     if not (new_link.startswith('http://') or new_link.startswith('https://')):
         await message.answer("❌ Link http:// yoki https:// bilan boshlanishi kerak!")
@@ -269,14 +271,14 @@ async def set_admin_contact(message: Message):
 
 # ==================== DELETE ADMIN ====================
 
-@router.message(F.text.startswith("/delete_admin"))
+@router.message(Command("delete_admin"))
 async def delete_admin(message: Message):
     if message.from_user.id != config.OWNER_ID:
         return
     
-    parts = message.text.split()
+    args = message.text.split()
     
-    if len(parts) < 2:
+    if len(args) < 2:
         await message.answer(
             "🗑 <b>Adminni o'chirish</b>\n\n"
             "Format: <code>/delete_admin USER_ID</code>\n\n"
@@ -285,7 +287,7 @@ async def delete_admin(message: Message):
         return
     
     try:
-        admin_id = int(parts[1])
+        admin_id = int(args[1])
         
         admin = await db.get_admin(admin_id)
         if not admin:
