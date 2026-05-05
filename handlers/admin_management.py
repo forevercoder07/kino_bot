@@ -15,8 +15,6 @@ router = Router()
 
 @router.message(F.text == "👨‍💼 Add admin")
 async def add_admin_start(message: Message, state: FSMContext):
-    """Admin qo'shishni boshlash"""
-    # Faqat owner qo'sha oladi
     if message.from_user.id != config.OWNER_ID:
         await message.answer("❌ Faqat bot egasi admin qo'sha oladi!")
         return
@@ -33,7 +31,6 @@ async def add_admin_start(message: Message, state: FSMContext):
 
 @router.message(AdminStates.waiting_admin_id)
 async def add_admin_id(message: Message, state: FSMContext):
-    """Admin ID ni qabul qilish"""
     if message.text == "❌ Bekor qilish":
         await state.clear()
         from handlers.admin import admin_panel
@@ -43,12 +40,10 @@ async def add_admin_id(message: Message, state: FSMContext):
     try:
         admin_id = int(message.text.strip())
         
-        # Owner ID ni tekshirish
         if admin_id == config.OWNER_ID:
             await message.answer("❌ Bu sizning ID ingiz! Siz allaqachon ownersiz.")
             return
         
-        # Allaqachon admin emasligini tekshirish
         existing_admin = await db.get_admin(admin_id)
         if existing_admin:
             await message.answer("❌ Bu foydalanuvchi allaqachon admin!")
@@ -72,8 +67,7 @@ async def add_admin_id(message: Message, state: FSMContext):
             "10 - Admin statistic\n\n"
             "Misol:\n"
             "• <code>1,2,3</code> - faqat kino qo'shish, qism qo'shish va o'chirish\n"
-            "• <code>7</code> - barcha ruxsatlar\n"
-            "• <code>1,2,4,5,6</code> - bir nechta ruxsatlar\n\n"
+            "• <code>7</code> - barcha ruxsatlar\n\n"
             "Ruxsatlarni vergul bilan ajratib kiriting:"
         )
         
@@ -85,7 +79,6 @@ async def add_admin_id(message: Message, state: FSMContext):
 
 @router.message(AdminStates.waiting_admin_permissions)
 async def add_admin_permissions(message: Message, state: FSMContext):
-    """Admin ruxsatlarini qabul qilish"""
     if message.text == "❌ Bekor qilish":
         await state.clear()
         from handlers.admin import admin_panel
@@ -95,7 +88,6 @@ async def add_admin_permissions(message: Message, state: FSMContext):
     data = await state.get_data()
     admin_id = data['admin_id']
     
-    # Ruxsatlarni parse qilish
     permissions = parse_permissions(message.text)
     
     if not permissions:
@@ -106,12 +98,9 @@ async def add_admin_permissions(message: Message, state: FSMContext):
         return
     
     try:
-        # Adminni qo'shish
         await db.add_admin(admin_id, permissions, message.from_user.id)
-        
         await state.clear()
         
-        # Ruxsatlarni chiroyli ko'rsatish
         perms_text = ", ".join(permissions) if 'all' not in permissions else "Barcha ruxsatlar"
         
         await message.answer(
@@ -122,7 +111,6 @@ async def add_admin_permissions(message: Message, state: FSMContext):
             reply_markup=get_admin_main_menu()
         )
         
-        # Yangi adminga xabar yuborish
         try:
             await message.bot.send_message(
                 admin_id,
@@ -142,7 +130,6 @@ async def add_admin_permissions(message: Message, state: FSMContext):
 
 @router.message(F.text == "📋 Admin statistic")
 async def admin_statistics(message: Message):
-    """Adminlar statistikasi"""
     if not await has_permission_check(message.from_user.id, "Admin statistic"):
         await message.answer("❌ Sizda bu amalni bajarish uchun ruxsat yo'q!")
         return
@@ -161,7 +148,6 @@ async def admin_statistics(message: Message):
     text += f"👑 <b>Owner:</b> <a href='tg://user?id={config.OWNER_ID}'>ID: {config.OWNER_ID}</a>\n\n"
     text += "👨‍💼 <b>Qo'shimcha adminlar:</b>\n\n"
     
-    # Inline keyboard yaratish
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
     
     for idx, admin in enumerate(admins, 1):
@@ -172,7 +158,6 @@ async def admin_statistics(message: Message):
         text += f"   🔑 {perms_text}\n"
         text += f"   📅 {admin['added_date'].strftime('%d.%m.%Y')}\n\n"
         
-        # Har bir admin uchun profil tugmasi
         keyboard.inline_keyboard.append([
             InlineKeyboardButton(
                 text=f"👤 Admin {idx}",
@@ -183,16 +168,79 @@ async def admin_statistics(message: Message):
     await message.answer(text, reply_markup=keyboard)
 
 
+# ==================== ANNOUNCEMENT CHANNEL SETTINGS ====================
+
+@router.message(F.text.startswith("/set_announcement_channel"))
+async def set_announcement_channel(message: Message):
+    """
+    E'lon kanalini sozlash.
+    Format: /set_announcement_channel -1001234567890 kino_vibe_films kino_vibe_bot
+    
+    Parametrlar:
+      1) Kanal ID si (masalan: -1001234567890)  yoki @username
+      2) Kanal username (@ belgisisiz, masalan: kino_vibe_films)
+      3) Bot username (@ belgisisiz, masalan: kino_vibe_bot)
+    """
+    if message.from_user.id != config.OWNER_ID:
+        return
+    
+    parts = message.text.split()
+    
+    if len(parts) < 4:
+        current_channel = await db.get_setting('announcement_channel') or "—"
+        current_ch_username = await db.get_setting('announcement_channel_username') or "—"
+        current_bot = await db.get_setting('bot_username') or "—"
+
+        await message.answer(
+            "📢 <b>E'lon kanali sozlamalari</b>\n\n"
+            f"Hozirgi kanal: <code>{current_channel}</code>\n"
+            f"Hozirgi kanal username: @{current_ch_username}\n"
+            f"Hozirgi bot username: @{current_bot}\n\n"
+            "<b>O'zgartirish uchun:</b>\n"
+            "<code>/set_announcement_channel KANAL_ID KANAL_USERNAME BOT_USERNAME</code>\n\n"
+            "Misol:\n"
+            "<code>/set_announcement_channel -1001234567890 kino_vibe_films kino_vibe_bot</code>\n\n"
+            "⚠️ Bot kanalga admin qilingan bo'lishi kerak!"
+        )
+        return
+    
+    channel_id = parts[1].strip()
+    channel_username = parts[2].strip().lstrip('@')
+    bot_username = parts[3].strip().lstrip('@')
+
+    # Kanalga ulanishni tekshirish
+    try:
+        chat = await message.bot.get_chat(channel_id)
+        channel_title = chat.title
+    except Exception as e:
+        await message.answer(
+            f"❌ Kanal topilmadi: {e}\n\n"
+            "Bot kanalga admin qilinganligini tekshiring!"
+        )
+        return
+
+    await db.set_setting('announcement_channel', channel_id)
+    await db.set_setting('announcement_channel_username', channel_username)
+    await db.set_setting('bot_username', bot_username)
+
+    await message.answer(
+        f"✅ <b>E'lon kanali sozlandi!</b>\n\n"
+        f"📢 Kanal: {channel_title}\n"
+        f"🆔 ID: <code>{channel_id}</code>\n"
+        f"🌐 Kanal: @{channel_username}\n"
+        f"🤖 Bot: @{bot_username}\n\n"
+        f"Endi har yangi kino qo'shilganda shu kanalga avtomatik e'lon yuboriladi.",
+        reply_markup=get_admin_main_menu()
+    )
+
+
 # ==================== CHANGE ADMIN CONTACT LINK ====================
 
 @router.message(F.text.startswith("/set_admin_contact"))
 async def set_admin_contact(message: Message):
-    """Admin contact link ni o'zgartirish"""
-    # Faqat owner
     if message.from_user.id != config.OWNER_ID:
         return
     
-    # Komanda formatini tekshirish
     parts = message.text.split(maxsplit=1)
     
     if len(parts) < 2:
@@ -206,7 +254,6 @@ async def set_admin_contact(message: Message):
     
     new_link = parts[1].strip()
     
-    # Link formatini tekshirish
     if not (new_link.startswith('http://') or new_link.startswith('https://')):
         await message.answer("❌ Link http:// yoki https:// bilan boshlanishi kerak!")
         return
@@ -224,8 +271,6 @@ async def set_admin_contact(message: Message):
 
 @router.message(F.text.startswith("/delete_admin"))
 async def delete_admin(message: Message):
-    """Adminni o'chirish"""
-    # Faqat owner
     if message.from_user.id != config.OWNER_ID:
         return
     
@@ -242,7 +287,6 @@ async def delete_admin(message: Message):
     try:
         admin_id = int(parts[1])
         
-        # Tekshirish
         admin = await db.get_admin(admin_id)
         if not admin:
             await message.answer("❌ Bunday admin topilmadi!")
@@ -256,7 +300,6 @@ async def delete_admin(message: Message):
             reply_markup=get_admin_main_menu()
         )
         
-        # Adminga xabar yuborish
         try:
             await message.bot.send_message(
                 admin_id,
