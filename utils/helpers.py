@@ -4,12 +4,6 @@ from database.db import db
 
 
 async def check_user_subscription(bot: Bot, user_id: int) -> tuple[bool, list]:
-    """
-    Foydalanuvchining barcha majburiy kanallarga obuna ekanligini tekshirish.
-    Ochiq kanal: get_chat_member orqali tekshiriladi.
-    Yopiq kanal: join_requests jadvalidagi so'rov borligiga qarab tekshiriladi.
-    Returns: (is_subscribed, not_subscribed_channels)
-    """
     channels = await db.get_all_channels()
 
     if not channels:
@@ -21,13 +15,10 @@ async def check_user_subscription(bot: Bot, user_id: int) -> tuple[bool, list]:
         try:
             member = await bot.get_chat_member(channel['channel_id'], user_id)
             if member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.KICKED]:
-                # Ochiq kanalda emas — yopiq kanal uchun join request borligini tekshir
                 has_request = await db.has_join_request(user_id, channel['channel_id'])
                 if not has_request:
                     not_subscribed.append(channel)
         except Exception as e:
-            # get_chat_member xato bersa — yopiq kanal bo'lishi mumkin
-            # join_request borligini tekshiramiz
             has_request = await db.has_join_request(user_id, channel['channel_id'])
             if not has_request:
                 not_subscribed.append(channel)
@@ -38,10 +29,16 @@ async def check_user_subscription(bot: Bot, user_id: int) -> tuple[bool, list]:
 
 
 def format_film_info(film, parts_count=0):
-    """Kino ma'lumotlarini formatlash"""
+    """Kino ma'lumotlarini foydalanuvchiga ko'rsatish uchun formatlash"""
     info = f"🎬 <b>{film['name']}</b>\n\n"
-    info += f"📝 <b>Izoh:</b> {film['description']}\n"
     info += f"🔢 <b>Kod:</b> <code>{film['code']}</code>\n"
+    info += f"🇺🇿 O'zbek tilida\n"
+    if film.get('year'):
+        info += f"📆 <b>Yil:</b> {film['year']}\n"
+    if film.get('genre'):
+        info += f"🎞 <b>Janr:</b> {film['genre']}\n"
+    if film.get('country'):
+        info += f"🌍 <b>Davlat:</b> {film['country']}\n"
     if parts_count > 0:
         info += f"📹 <b>Qismlar soni:</b> {parts_count}\n"
     return info
@@ -53,10 +50,6 @@ def format_number(num):
 
 
 async def broadcast_message(bot: Bot, message_to_send, from_chat_id=None):
-    """
-    Barcha foydalanuvchilarga xabar yuborish
-    message_to_send - forward qilinadigan message object
-    """
     users = await db.get_all_users()
     success = 0
     failed = 0
@@ -73,7 +66,6 @@ async def broadcast_message(bot: Bot, message_to_send, from_chat_id=None):
 
 
 def get_permission_name(perm_code):
-    """Ruxsat kodini nomga aylantirish"""
     permissions_map = {
         '1': 'Add film',
         '2': 'Add parts',
@@ -90,10 +82,6 @@ def get_permission_name(perm_code):
 
 
 def parse_permissions(permissions_text):
-    """
-    Ruxsatlar matnini parse qilish
-    Misol: "1,2,3" -> ['Add film', 'Add parts', 'Delete film']
-    """
     if not permissions_text:
         return []
 
@@ -105,7 +93,7 @@ def parse_permissions(permissions_text):
     permissions = []
     for code in codes:
         perm_name = get_permission_name(code)
-        if perm_name != code:  # Agar valid kod bo'lsa
+        if perm_name != code:
             permissions.append(perm_name)
 
     return permissions
