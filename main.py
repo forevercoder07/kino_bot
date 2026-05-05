@@ -5,6 +5,7 @@ from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 import config
@@ -23,7 +24,9 @@ bot = Bot(
     token=config.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
-dp = Dispatcher()
+
+# MemoryStorage — FSM state lar restart bo'lganda tozalanadi
+dp = Dispatcher(storage=MemoryStorage())
 
 
 async def on_startup():
@@ -38,7 +41,7 @@ async def on_startup():
     await db.create_tables()
     logger.info("Database jadvallari tekshirildi/yaratildi")
 
-    # Webhook o'rnatish — chat_join_request eventini qo'shish MUHIM!
+    # Webhook o'rnatish
     webhook_url = f"{config.WEBHOOK_URL}{config.WEBHOOK_PATH}"
     await bot.set_webhook(
         url=webhook_url,
@@ -46,7 +49,7 @@ async def on_startup():
         allowed_updates=[
             "message",
             "callback_query",
-            "chat_join_request",   # ← yopiq kanal so'rovlari uchun SHART
+            "chat_join_request",
             "my_chat_member",
             "chat_member",
         ]
@@ -70,7 +73,7 @@ async def on_shutdown():
 
 async def main():
     """Asosiy funksiya"""
-    # Routerlarni ro'yxatdan o'tkazish
+    # Routerlarni ro'yxatdan o'tkazish — tartib muhim!
     dp.include_router(user.router)
     dp.include_router(admin.router)
     dp.include_router(admin_stats.router)
