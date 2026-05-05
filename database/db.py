@@ -34,17 +34,27 @@ class Database:
                 )
             ''')
             
-            # Films jadvali
+            # Films jadvali — year, genre, country yangi ustunlar
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS films (
                     id SERIAL PRIMARY KEY,
                     code VARCHAR(50) UNIQUE NOT NULL,
                     name VARCHAR(255) NOT NULL,
-                    description TEXT,
+                    year VARCHAR(10),
+                    genre VARCHAR(255),
+                    country VARCHAR(255),
                     thumbnail_file_id VARCHAR(255),
                     created_date TIMESTAMP DEFAULT NOW()
                 )
             ''')
+
+            # Eski description ustunini olib tashlash (agar mavjud bo'lsa, ignore)
+            try:
+                await conn.execute('ALTER TABLE films ADD COLUMN IF NOT EXISTS year VARCHAR(10)')
+                await conn.execute('ALTER TABLE films ADD COLUMN IF NOT EXISTS genre VARCHAR(255)')
+                await conn.execute('ALTER TABLE films ADD COLUMN IF NOT EXISTS country VARCHAR(255)')
+            except Exception:
+                pass
             
             # Film parts jadvali
             await conn.execute('''
@@ -108,17 +118,30 @@ class Database:
                 )
             ''')
             
-            # Admin contact link ni sozlamalarga qo'shish
+            # Default sozlamalarni qo'shish
             await conn.execute('''
                 INSERT INTO settings (key, value)
                 VALUES ('admin_contact_link', $1)
                 ON CONFLICT (key) DO NOTHING
             ''', config.ADMIN_CONTACT_LINK)
+
+            # Announcement channel sozlamasi (default bo'sh)
+            await conn.execute('''
+                INSERT INTO settings (key, value)
+                VALUES ('announcement_channel', '')
+                ON CONFLICT (key) DO NOTHING
+            ''')
+
+            # Bot username sozlamasi (default bo'sh)
+            await conn.execute('''
+                INSERT INTO settings (key, value)
+                VALUES ('bot_username', '')
+                ON CONFLICT (key) DO NOTHING
+            ''')
     
     # =============== USER METHODS ===============
     
     async def add_user(self, user_id: int, username: str = None, full_name: str = None):
-        """Yangi foydalanuvchi qo'shish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO users (user_id, username, full_name)
@@ -128,22 +151,18 @@ class Database:
             ''', user_id, username, full_name)
     
     async def get_user(self, user_id: int):
-        """Foydalanuvchi ma'lumotlarini olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('SELECT * FROM users WHERE user_id = $1', user_id)
     
     async def get_all_users(self):
-        """Barcha foydalanuvchilarni olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('SELECT user_id FROM users WHERE is_blocked = FALSE')
     
     async def get_users_count(self):
-        """Jami foydalanuvchilar soni"""
         async with self.pool.acquire() as conn:
             return await conn.fetchval('SELECT COUNT(*) FROM users')
     
     async def get_users_by_period(self, days: int):
-        """Ma'lum davr ichida qo'shilgan foydalanuvchilar soni"""
         async with self.pool.acquire() as conn:
             date_from = datetime.now() - timedelta(days=days)
             return await conn.fetchval('''
@@ -152,7 +171,6 @@ class Database:
             ''', date_from)
     
     async def get_daily_views(self):
-        """Kunlik ko'rishlar soni"""
         async with self.pool.acquire() as conn:
             today = datetime.now().date()
             return await conn.fetchval('''
@@ -162,31 +180,27 @@ class Database:
     
     # =============== FILM METHODS ===============
     
-    async def add_film(self, code: str, name: str, description: str, thumbnail_file_id: str):
-        """Yangi kino qo'shish"""
+    async def add_film(self, code: str, name: str, year: str, genre: str, country: str, thumbnail_file_id: str):
+        """Yangi kino qo'shish — year, genre, country bilan"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
-                INSERT INTO films (code, name, description, thumbnail_file_id)
-                VALUES ($1, $2, $3, $4)
-            ''', code, name, description, thumbnail_file_id)
+                INSERT INTO films (code, name, year, genre, country, thumbnail_file_id)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            ''', code, name, year, genre, country, thumbnail_file_id)
     
     async def get_film(self, code: str):
-        """Kino ma'lumotlarini olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('SELECT * FROM films WHERE code = $1', code)
     
     async def delete_film(self, code: str):
-        """Kinoni o'chirish"""
         async with self.pool.acquire() as conn:
             await conn.execute('DELETE FROM films WHERE code = $1', code)
     
     async def get_all_films(self):
-        """Barcha kinolarni olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('SELECT code, name FROM films ORDER BY created_date DESC')
     
     async def get_films_paginated(self, offset: int = 0, limit: int = 30):
-        """Sahifalangan kinolar ro'yxati"""
         async with self.pool.acquire() as conn:
             films = await conn.fetch('''
                 SELECT code, name FROM films 
@@ -199,7 +213,6 @@ class Database:
     # =============== FILM PARTS METHODS ===============
     
     async def add_film_part(self, film_code: str, part_number: int, video_file_id: str):
-        """Kino qismi qo'shish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO film_parts (film_code, part_number, video_file_id)
@@ -207,7 +220,6 @@ class Database:
             ''', film_code, part_number, video_file_id)
     
     async def get_film_parts(self, film_code: str):
-        """Kino qismlarini olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('''
                 SELECT * FROM film_parts 
@@ -216,7 +228,6 @@ class Database:
             ''', film_code)
     
     async def get_film_part(self, film_code: str, part_number: int):
-        """Bitta kino qismini olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('''
                 SELECT * FROM film_parts 
@@ -224,7 +235,6 @@ class Database:
             ''', film_code, part_number)
     
     async def delete_film_part(self, film_code: str, part_number: int):
-        """Kino qismini o'chirish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 DELETE FROM film_parts 
@@ -232,7 +242,6 @@ class Database:
             ''', film_code, part_number)
     
     async def get_parts_count(self, film_code: str):
-        """Kino qismlari soni"""
         async with self.pool.acquire() as conn:
             return await conn.fetchval('''
                 SELECT COUNT(*) FROM film_parts WHERE film_code = $1
@@ -241,7 +250,6 @@ class Database:
     # =============== FILM VIEWS METHODS ===============
     
     async def add_film_view(self, film_code: str, user_id: int):
-        """Kino ko'rilganini qayd qilish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO film_views (film_code, user_id)
@@ -249,7 +257,6 @@ class Database:
             ''', film_code, user_id)
     
     async def get_top_films(self, limit: int = 20):
-        """Eng ko'p ko'rilgan kinolar"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('''
                 SELECT f.name, f.code, COUNT(fv.id) as views_count
@@ -263,7 +270,6 @@ class Database:
     # =============== CHANNEL METHODS ===============
     
     async def add_channel(self, channel_id: int, channel_username: str = None, channel_title: str = None):
-        """Kanal qo'shish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO channels (channel_id, channel_username, channel_title)
@@ -273,19 +279,16 @@ class Database:
             ''', channel_id, channel_username, channel_title)
     
     async def delete_channel(self, channel_id: int):
-        """Kanalni o'chirish"""
         async with self.pool.acquire() as conn:
             await conn.execute('DELETE FROM channels WHERE channel_id = $1', channel_id)
     
     async def get_all_channels(self):
-        """Barcha kanallarni olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('SELECT * FROM channels ORDER BY added_date')
 
     # =============== JOIN REQUEST METHODS ===============
 
     async def add_join_request(self, user_id: int, channel_id: int):
-        """Yopiq kanalga qo'shilish so'rovini saqlash"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO join_requests (user_id, channel_id)
@@ -294,7 +297,6 @@ class Database:
             ''', user_id, channel_id)
 
     async def has_join_request(self, user_id: int, channel_id: int) -> bool:
-        """Foydalanuvchi yopiq kanalga so'rov yuborgan-yubormaganligini tekshirish"""
         async with self.pool.acquire() as conn:
             result = await conn.fetchval('''
                 SELECT COUNT(*) FROM join_requests
@@ -305,7 +307,6 @@ class Database:
     # =============== ADMIN METHODS ===============
     
     async def add_admin(self, user_id: int, permissions: List[str], added_by: int):
-        """Admin qo'shish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO admins (user_id, permissions, added_by)
@@ -315,22 +316,18 @@ class Database:
             ''', user_id, permissions, added_by)
     
     async def get_admin(self, user_id: int):
-        """Admin ma'lumotlarini olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetchrow('SELECT * FROM admins WHERE user_id = $1', user_id)
     
     async def get_all_admins(self):
-        """Barcha adminlarni olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetch('SELECT * FROM admins')
     
     async def delete_admin(self, user_id: int):
-        """Adminni o'chirish"""
         async with self.pool.acquire() as conn:
             await conn.execute('DELETE FROM admins WHERE user_id = $1', user_id)
     
     async def is_admin(self, user_id: int):
-        """Foydalanuvchi admin ekanligini tekshirish"""
         if user_id == config.OWNER_ID:
             return True
         async with self.pool.acquire() as conn:
@@ -338,7 +335,6 @@ class Database:
             return result > 0
     
     async def has_permission(self, user_id: int, permission: str):
-        """Admin ruxsatini tekshirish"""
         if user_id == config.OWNER_ID:
             return True
         async with self.pool.acquire() as conn:
@@ -350,12 +346,10 @@ class Database:
     # =============== SETTINGS METHODS ===============
     
     async def get_setting(self, key: str):
-        """Sozlamani olish"""
         async with self.pool.acquire() as conn:
             return await conn.fetchval('SELECT value FROM settings WHERE key = $1', key)
     
     async def set_setting(self, key: str, value: str):
-        """Sozlamani o'rnatish"""
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO settings (key, value)
