@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -71,25 +71,34 @@ async def send_film_announcement(bot, film: dict):
         f"📆 Yil: <b>{film['year'] or '—'}</b>\n"
         f"🎞 Janr: <b>{film['genre'] or '—'}</b>\n"
         f"🌍 Davlat: <b>{film['country'] or '—'}</b>\n\n"
-        f"🌐 My channel: {('@' + channel_username) if channel_username else channel}\n"
+        f"🌐 My channel: {('@' + channel_username) if channel_username else channel}\n\n"
         f"🤖 My Bot: {('@' + bot_username) if bot_username else '—'}\n\n"
-        f"Bizni kuzatishda davom eting biz yurishda davom etamiz."
+        f"Bizni kuzatishda davom eting, \nBiz esa yurishda davom etamiz."
     )
+
+    # DOWNLOAD inline tugmasi — botga o'tib kodni yuboradi
+    download_button = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="DOWNLOAD 🎬",
+            url=f"https://t.me/{bot_username}?start={film['code']}" if bot_username else f"https://t.me/{bot_username}"
+        )
+    ]])
 
     try:
         if film['thumbnail_file_id']:
             await bot.send_photo(
                 chat_id=channel,
                 photo=film['thumbnail_file_id'],
-                caption=caption
+                caption=caption,
+                reply_markup=download_button
             )
         else:
             await bot.send_message(
                 chat_id=channel,
-                text=caption
+                text=caption,
+                reply_markup=download_button
             )
     except Exception as e:
-        # Kanal topilmasa yoki bot admin bo'lmasa — xatolikni log qilamiz
         print(f"Kanalga yuborishda xatolik: {e}")
 
 
