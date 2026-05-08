@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ChatJoinRequest
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -19,10 +19,6 @@ class UserStates(StatesGroup):
 
 
 async def get_invite_links(channels: list) -> dict:
-    """
-    Yopiq kanallar uchun invite linklarni settings dan olish.
-    Returns: {channel_id: invite_link_url}
-    """
     invite_links = {}
     for channel in channels:
         if not channel['channel_username']:
@@ -32,129 +28,14 @@ async def get_invite_links(channels: list) -> dict:
     return invite_links
 
 
-@router.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
-    """Start komandasi - foydalanuvchini ro'yxatga olish"""
-    await state.clear()
-
-    user_id = message.from_user.id
-    username = message.from_user.username
-    full_name = message.from_user.full_name
-
-    # Foydalanuvchini bazaga qo'shish
-    await db.add_user(user_id, username, full_name)
-
-    # Kanalga obuna tekshirish
-    channels = await db.get_all_channels()
-
-    if channels:
-        is_subscribed, not_subscribed = await check_user_subscription(message.bot, user_id)
-
-        if not is_subscribed:
-            invite_links = await get_invite_links(not_subscribed)
-            keyboard = get_channels_keyboard(not_subscribed, invite_links)
-            await message.answer(
-                "👋 Assalomu aleykum!\n\n"
-                "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:",
-                reply_markup=keyboard
-            )
-            return
-
-    await message.answer(
-        f"👋 Assalomu aleykum, {full_name}!\n\n"
-        "🎬 Kino botiga xush kelibsiz!\n\n"
-        "Botdan foydalanish uchun quyidagi tugmalardan birini tanlang:",
-        reply_markup=get_user_main_menu()
-    )
-
-
-@router.chat_join_request()
-async def handle_join_request(update: ChatJoinRequest):
-    """
-    Foydalanuvchi yopiq kanalga qo'shilish so'rovi yuborganda ishga tushadi.
-    So'rovni bazaga saqlaymiz — bu "obuna bo'ldi" deb hisoblanadi.
-    """
-    user_id = update.from_user.id
-    channel_id = update.chat.id
-
-    await db.add_join_request(user_id, channel_id)
-
-    try:
-        await update.bot.send_message(
-            user_id,
-            f"✅ <b>{update.chat.title}</b> kanaliga qo'shilish so'rovingiz qabul qilindi!\n\n"
-            f"Botga qaytib kino qidiring — obunangiz tasdiqlandi. 🎬",
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-
-@router.callback_query(F.data == "check_subscription")
-async def check_subscription_callback(callback: CallbackQuery):
-    """Obuna tekshirish tugmasi bosilganda"""
-    user_id = callback.from_user.id
-
-    is_subscribed, not_subscribed = await check_user_subscription(callback.bot, user_id)
-
-    if is_subscribed:
-        await callback.message.delete()
-        await callback.message.answer(
-            f"✅ Obuna tasdiqlandi!\n\n"
-            f"👋 {callback.from_user.full_name}, botga xush kelibsiz!\n\n"
-            "Quyidagi tugmalardan birini tanlang:",
-            reply_markup=get_user_main_menu()
-        )
-    else:
-        invite_links = await get_invite_links(not_subscribed)
-        keyboard = get_channels_keyboard(not_subscribed, invite_links)
-        await callback.answer(
-            "❌ Siz hali barcha kanallarga obuna bo'lmadingiz!",
-            show_alert=True
-        )
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
-
-
-@router.message(F.text == "🎬 Kino qidirish")
-async def search_film(message: Message, state: FSMContext):
-    """Kino qidirish tugmasi"""
-    is_subscribed, not_subscribed = await check_user_subscription(message.bot, message.from_user.id)
-    if not is_subscribed:
-        invite_links = await get_invite_links(not_subscribed)
-        keyboard = get_channels_keyboard(not_subscribed, invite_links)
-        await message.answer(
-            "❌ Botdan foydalanish uchun kanallarga obuna bo'ling:",
-            reply_markup=keyboard
-        )
-        return
-
-    await state.set_state(UserStates.waiting_for_film_code)
-    await message.answer(
-        "🔍 Kino kodini kiriting:\n\n"
-        "Misol: <code>101</code>",
-        reply_markup=get_back_to_menu(),
-        parse_mode="HTML"
-    )
-
-
-@router.message(UserStates.waiting_for_film_code)
-async def process_film_code(message: Message, state: FSMContext):
-    """Kino kodini qabul qilish"""
-    if message.text == "🏠 Asosiy menyu":
-        await state.clear()
-        await message.answer(
-            "Asosiy menyuga qaytdingiz:",
-            reply_markup=get_user_main_menu()
-        )
-        return
-
-    film_code = message.text.strip()
+async def send_film_to_user(message: Message, film_code: str):
+    """Foydalanuvchiga kinoni yuborish (deep link uchun ham ishlatiladi)"""
     film = await db.get_film(film_code)
 
     if not film:
         await message.answer(
-            "❌ Bu kod bo'yicha kino topilmadi!\n\n"
-            "Iltimos, to'g'ri kodni kiriting:"
+            "❌ Bu kod bo'yicha kino topilmadi!",
+            reply_markup=get_user_main_menu()
         )
         return
 
@@ -162,33 +43,26 @@ async def process_film_code(message: Message, state: FSMContext):
 
     if not parts:
         await message.answer(
-            "❌ Bu kino uchun qismlar yuklanmagan!\n\n"
-            "Iltimos, boshqa kino kodini kiriting:"
+            "❌ Bu kino uchun qismlar yuklanmagan!",
+            reply_markup=get_user_main_menu()
         )
         return
 
-    await state.clear()
-
     if len(parts) == 1:
         part = parts[0]
-
         if film['thumbnail_file_id']:
             await message.answer_photo(
                 photo=film['thumbnail_file_id'],
                 caption=format_film_info(film, len(parts))
             )
-
         await message.answer_video(
             video=part['video_file_id'],
             caption=f"🎬 <b>{film['name']}</b>\n📹 Video",
             reply_markup=get_user_main_menu()
         )
-
         await db.add_film_view(film_code, message.from_user.id)
-
     else:
         keyboard = get_film_parts_keyboard(len(parts), film_code)
-
         if film['thumbnail_file_id']:
             await message.answer_photo(
                 photo=film['thumbnail_file_id'],
@@ -202,9 +76,139 @@ async def process_film_code(message: Message, state: FSMContext):
             )
 
 
+@router.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext):
+    """Start komandasi — deep link parametrini ham qo'llab-quvvatlaydi"""
+    await state.clear()
+
+    user_id = message.from_user.id
+    username = message.from_user.username
+    full_name = message.from_user.full_name
+
+    # Foydalanuvchini bazaga qo'shish
+    await db.add_user(user_id, username, full_name)
+
+    # Deep link parametrini olish: /start 101 → film kodi "101"
+    args = message.text.split()
+    film_code = args[1] if len(args) > 1 else None
+
+    # Kanalga obuna tekshirish
+    channels = await db.get_all_channels()
+
+    if channels:
+        is_subscribed, not_subscribed = await check_user_subscription(message.bot, user_id)
+
+        if not is_subscribed:
+            invite_links = await get_invite_links(not_subscribed)
+            keyboard = get_channels_keyboard(not_subscribed, invite_links)
+
+            # Agar deep link bo'lsa — obunadan keyin kinoni ko'rsatish uchun state da saqlaymiz
+            if film_code:
+                await state.update_data(pending_film_code=film_code)
+
+            await message.answer(
+                "👋 Assalomu aleykum!\n\n"
+                "Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:",
+                reply_markup=keyboard
+            )
+            return
+
+    # Obuna tekshirildi — agar deep link bo'lsa kinoni ko'rsat
+    if film_code:
+        await message.answer(
+            f"👋 Xush kelibsiz, {full_name}!\n\n"
+            f"🎬 Kino yuklanmoqda...",
+            reply_markup=get_user_main_menu()
+        )
+        await send_film_to_user(message, film_code)
+        return
+
+    await message.answer(
+        f"👋 Assalomu aleykum, {full_name}!\n\n"
+        "🎬 Kino botiga xush kelibsiz!\n\n"
+        "Botdan foydalanish uchun quyidagi tugmalardan birini tanlang:",
+        reply_markup=get_user_main_menu()
+    )
+
+
+@router.callback_query(F.data == "check_subscription")
+async def check_subscription_callback(callback: CallbackQuery, state: FSMContext):
+    """Obuna tekshirish tugmasi bosilganda"""
+    user_id = callback.from_user.id
+
+    is_subscribed, not_subscribed = await check_user_subscription(callback.bot, user_id)
+
+    if is_subscribed:
+        await callback.message.delete()
+
+        # Deep link orqali kelgan bo'lsa — kinoni ko'rsat
+        data = await state.get_data()
+        pending_film_code = data.get('pending_film_code')
+        await state.clear()
+
+        await callback.message.answer(
+            f"✅ Obuna tasdiqlandi!\n\n"
+            f"👋 {callback.from_user.full_name}, botga xush kelibsiz!\n\n"
+            "Quyidagi tugmalardan birini tanlang:",
+            reply_markup=get_user_main_menu()
+        )
+
+        if pending_film_code:
+            await send_film_to_user(callback.message, pending_film_code)
+    else:
+        invite_links = await get_invite_links(not_subscribed)
+        keyboard = get_channels_keyboard(not_subscribed, invite_links)
+        await callback.answer(
+            "❌ Siz hali barcha kanallarga obuna bo'lmadingiz!",
+            show_alert=True
+        )
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+
+@router.message(F.text == "🎬 Kino qidirish")
+async def search_film(message: Message, state: FSMContext):
+    is_subscribed, not_subscribed = await check_user_subscription(message.bot, message.from_user.id)
+    if not is_subscribed:
+        invite_links = await get_invite_links(not_subscribed)
+        keyboard = get_channels_keyboard(not_subscribed, invite_links)
+        await message.answer("❌ Botdan foydalanish uchun kanallarga obuna bo'ling:", reply_markup=keyboard)
+        return
+
+    await state.set_state(UserStates.waiting_for_film_code)
+    await message.answer(
+        "🔍 Kino kodini kiriting:\n\n"
+        "Misol: <code>101</code>",
+        reply_markup=get_back_to_menu(),
+        parse_mode="HTML"
+    )
+
+
+@router.message(UserStates.waiting_for_film_code)
+async def process_film_code(message: Message, state: FSMContext):
+    if message.text == "🏠 Asosiy menyu":
+        await state.clear()
+        await message.answer("Asosiy menyuga qaytdingiz:", reply_markup=get_user_main_menu())
+        return
+
+    film_code = message.text.strip()
+    film = await db.get_film(film_code)
+
+    if not film:
+        await message.answer("❌ Bu kod bo'yicha kino topilmadi!\n\nIltimos, to'g'ri kodni kiriting:")
+        return
+
+    parts = await db.get_film_parts(film_code)
+
+    if not parts:
+        await message.answer("❌ Bu kino uchun qismlar yuklanmagan!\n\nIltimos, boshqa kino kodini kiriting:")
+        return
+
+    await state.clear()
+    await send_film_to_user(message, film_code)
+
+
 @router.callback_query(F.data.startswith("part_"))
 async def send_film_part(callback: CallbackQuery):
-    """Tanlangan qismni yuborish"""
     _, film_code, part_num = callback.data.split("_")
     part_number = int(part_num)
 
@@ -232,28 +236,20 @@ async def send_film_part(callback: CallbackQuery):
 
 @router.message(F.text == "📊 Kinolar statistikasi")
 async def films_statistics(message: Message):
-    """Kinolar statistikasi - top 20"""
     is_subscribed, not_subscribed = await check_user_subscription(message.bot, message.from_user.id)
     if not is_subscribed:
         invite_links = await get_invite_links(not_subscribed)
         keyboard = get_channels_keyboard(not_subscribed, invite_links)
-        await message.answer(
-            "❌ Botdan foydalanish uchun kanallarga obuna bo'ling:",
-            reply_markup=keyboard
-        )
+        await message.answer("❌ Botdan foydalanish uchun kanallarga obuna bo'ling:", reply_markup=keyboard)
         return
 
     top_films = await db.get_top_films(20)
 
     if not top_films:
-        await message.answer(
-            "📊 Hozircha statistika mavjud emas!",
-            reply_markup=get_user_main_menu()
-        )
+        await message.answer("📊 Hozircha statistika mavjud emas!", reply_markup=get_user_main_menu())
         return
 
     text = "📊 <b>TOP 20 eng ko'p ko'rilgan kinolar:</b>\n\n"
-
     for idx, film in enumerate(top_films, 1):
         medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
         text += f"{medal} <b>{film['name']}</b>\n"
@@ -264,15 +260,11 @@ async def films_statistics(message: Message):
 
 @router.message(F.text == "📞 Adminga murojat")
 async def contact_admin(message: Message):
-    """Adminga murojat"""
     is_subscribed, not_subscribed = await check_user_subscription(message.bot, message.from_user.id)
     if not is_subscribed:
         invite_links = await get_invite_links(not_subscribed)
         keyboard = get_channels_keyboard(not_subscribed, invite_links)
-        await message.answer(
-            "❌ Botdan foydalanish uchun kanallarga obuna bo'ling:",
-            reply_markup=keyboard
-        )
+        await message.answer("❌ Botdan foydalanish uchun kanallarga obuna bo'ling:", reply_markup=keyboard)
         return
 
     admin_link = await db.get_setting('admin_contact_link')
@@ -289,9 +281,5 @@ async def contact_admin(message: Message):
 
 @router.message(F.text == "🏠 Asosiy menyu")
 async def main_menu(message: Message, state: FSMContext):
-    """Asosiy menyuga qaytish"""
     await state.clear()
-    await message.answer(
-        "Asosiy menyu:",
-        reply_markup=get_user_main_menu()
-    )
+    await message.answer("Asosiy menyu:", reply_markup=get_user_main_menu())
