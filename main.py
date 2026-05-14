@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from aiohttp import web
 
@@ -12,36 +11,29 @@ import config
 from database.db import db
 from handlers import user, admin, admin_stats, admin_management
 
-# Logging sozlamalari
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Bot va Dispatcher yaratish
 bot = Bot(
     token=config.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
-
-# MemoryStorage — FSM state lar restart bo'lganda tozalanadi
 dp = Dispatcher(storage=MemoryStorage())
 
 
-async def on_startup():
-    """Bot ishga tushganda"""
+async def on_startup(bot: Bot):
+    """Bot ishga tushganda — aiogram on_startup ga bot parametri kerak"""
     logger.info("Bot ishga tushmoqda...")
 
-    # Database ulanish
     await db.connect()
     logger.info("Database ga ulanish muvaffaqiyatli!")
 
-    # Jadvallarni yaratish
     await db.create_tables()
     logger.info("Database jadvallari tekshirildi/yaratildi")
 
-    # Webhook o'rnatish
     webhook_url = f"{config.WEBHOOK_URL}{config.WEBHOOK_PATH}"
     await bot.set_webhook(
         url=webhook_url,
@@ -60,38 +52,31 @@ async def on_startup():
     logger.info(f"Bot ishga tushdi: @{bot_info.username}")
 
 
-async def on_shutdown():
+async def on_shutdown(bot: Bot):
     """Bot to'xtaganda"""
     logger.info("Bot to'xtatilmoqda...")
-
     await bot.delete_webhook(drop_pending_updates=True)
     await db.disconnect()
     await bot.session.close()
-
     logger.info("Bot to'xtatildi")
 
 
-async def main():
-    """Asosiy funksiya"""
-    # Routerlarni ro'yxatdan o'tkazish — tartib muhim!
+def main():
+    # Routerlarni ro'yxatdan o'tkazish
     dp.include_router(user.router)
     dp.include_router(admin.router)
     dp.include_router(admin_stats.router)
     dp.include_router(admin_management.router)
 
-    # Startup va shutdown handlerlar
+    # Startup va shutdown
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
-    # Web application yaratish
+    # Web app
     app = web.Application()
 
-    webhook_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot
-    )
+    webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_handler.register(app, path=config.WEBHOOK_PATH)
-
     setup_application(app, dp, bot=bot)
 
     async def root(request):
@@ -101,11 +86,11 @@ async def main():
     app.router.add_get('/health', root)
 
     logger.info(f"Server ishga tushmoqda: 0.0.0.0:{config.PORT}")
-    return app
+    web.run_app(app, host='0.0.0.0', port=config.PORT)
 
 
 if __name__ == '__main__':
     try:
-        web.run_app(asyncio.run(main()), host='0.0.0.0', port=config.PORT)
+        main()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot to'xtatildi (KeyboardInterrupt)")
