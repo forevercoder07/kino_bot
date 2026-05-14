@@ -320,30 +320,22 @@ async def delete_admin(message: Message):
 
 @router.message(Command("export_films"))
 async def export_films(message: Message):
-    """
-    Barcha kinolarni Word (.docx) faylga eksport qilish.
-    Faqat adminlar uchun.
-    """
+    """Barcha kinolarni Word (.docx) faylga eksport qilish. Faqat adminlar uchun."""
     if not await is_admin_check(message.from_user.id):
         return
 
     status = await message.answer("⏳ Fayl tayyorlanmoqda...")
 
     try:
-        import json
-        import asyncio
-        import os
-        import tempfile
         from datetime import datetime
+        from export_films import create_films_docx
 
-        # Barcha kinolarni olish
         films = await db.get_all_films()
 
         if not films:
             await status.edit_text("❌ Hozircha kinolar yo'q!")
             return
 
-        # Har bir kino uchun qismlar sonini olish
         films_data = []
         for film in films:
             parts_count = await db.get_parts_count(film['code'])
@@ -353,43 +345,22 @@ async def export_films(message: Message):
                 "parts_count": int(parts_count)
             })
 
-        # JS script orqali docx yaratish
-        films_json = json.dumps(films_data, ensure_ascii=False)
-        tmp_output = tempfile.mktemp(suffix=".docx")
+        docx_bytes = create_films_docx(films_data)
 
-        # Script joylashuvi — bot bilan bir papkada bo'lishi kerak
-        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "create_films_doc.js")
-
-        proc = await asyncio.create_subprocess_exec(
-            "node", script_path, films_json, tmp_output,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
-            await status.edit_text(f"❌ Xatolik: {stderr.decode()}")
-            return
-
-        # Faylni botda yuborish
         today = datetime.now().strftime("%d.%m.%Y")
-        filename = f"kinolar_{today}.docx"
+        total_parts = sum(f['parts_count'] for f in films_data)
 
-        with open(tmp_output, "rb") as f:
-            await message.answer_document(
-                document=(filename, f.read()),
-                caption=(
-                    f"📄 <b>Kinolar ro'yxati</b>\n\n"
-                    f"📅 Sana: {today}\n"
-                    f"🎬 Jami kinolar: {len(films_data)} ta\n"
-                    f"📹 Jami qismlar: {sum(f['parts_count'] for f in films_data)} ta"
-                )
+        from aiogram.types import BufferedInputFile
+        await message.answer_document(
+            document=BufferedInputFile(docx_bytes, filename=f"kinolar_{today}.docx"),
+            caption=(
+                f"📄 <b>Kinolar ro'yxati</b>\n\n"
+                f"📅 Sana: {today}\n"
+                f"🎬 Jami kinolar: {len(films_data)} ta\n"
+                f"📹 Jami qismlar: {total_parts} ta"
             )
-
+        )
         await status.delete()
-
-        # Vaqtinchalik faylni o'chirish
-        os.remove(tmp_output)
 
     except Exception as e:
         await status.edit_text(f"❌ Xatolik yuz berdi: {e}")
